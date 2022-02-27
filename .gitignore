@@ -50,3 +50,9 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+*.zip
+hello-temperature-master/hello-temperature-master/COPYING
+hello-temperature-master/hello-temperature-master/main.c
+hello-temperature-master/hello-temperature-master/Makefile
+hello-temperature-master/hello-temperature-master/stubs.c
+hello-temperature-master/hello-temperature-master/vectors.S
