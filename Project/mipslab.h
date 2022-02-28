@@ -15,11 +15,11 @@ void display_update(void);
 uint8_t spi_send_recv(uint8_t data);
 
 /* Declare lab-related functions from mipslabfunc.c */
-char * itoaconv( int num );
+char *itoaconv(int num);
 void labwork(void);
-int nextprime( int inval );
+int nextprime(int inval);
 void quicksleep(int cyc);
-void tick( unsigned int * timep );
+void tick(unsigned int *timep);
 
 /* Declare display_debug - a function to help debugging.
 
@@ -33,57 +33,20 @@ void tick( unsigned int * timep );
    repeated calls to display_image; display_image overwrites
    about half of the digits shown by display_debug.
 */
-void display_debug( volatile int * const addr );
+void display_debug(volatile int *const addr);
 
 /* -------------------------- Project related code -------------------------- */
 
 /* Declare bitmap array containing the display */
-extern uint8_t display[128*4]; // 128*4 Bytes for each pixel column
-
-/* Declaring global variables for player data */
-extern int bike1_x;
-extern int bike1_y;
-extern int bike1_direction;
-extern int bike1_score;
-
-extern int bike2_x;
-extern int bike2_y;
-extern int bike2_direction;
-extern int bike2_score;
-
-/* Game state variables that check for game over */
-extern int bike1_crash;
-extern int bike2_crash;
-
-/* Array to hold all pixels on-off state */
-extern char taken[128*32];
+extern uint8_t display[128 * 4]; // 128*4 Bytes for each pixel column
 
 /* Function declarations */
-int pow(int base, int exponent);
-void clear_display(void);
-void players_init(void);
-void border_init(void);
-void draw_pixel(int x, int y);
-int add_taken(int x, int y);
-void clear_taken(void);
-void player1_update(int direction);
-void player2_update(int direction);
-void check_crash(void);
-void get_score(void);
-void game_init(void);
-void check_gameover(void);
-
-/* Comment out if bugged */
-/*
-void enemy_ai(int direction);
-int decision(int direction);
-extern int rando[50];
-extern int rand_index; */
+// int pow(int base, int exponent);
 
 /* ----------------------- End of project related code ---------------------- */
 
 /* Declare bitmap array containing font */
-extern const uint8_t const font[128*8];
+extern const uint8_t const font[128 * 8];
 
 /* Declare text buffer for display output */
 extern char textbuffer[4][16];
@@ -94,7 +57,7 @@ extern char textbuffer[4][16];
    specified in the laboratory instructions. */
 /* Written as part of asm lab: delay, time2string */
 void delay(int);
-void time2string( char *, int );
+void time2string(char *, int);
 /* Written as part of i/o lab: getbtns, getsw, enable_interrupt */
 int getbtns(void);
 int getsw(void);
