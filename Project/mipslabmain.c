@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include "mipslab.h" /* Declatations for these labs */
 #include <float.h>
-#include <math.h>
+//#include <math.h>
 
 /* Address of the temperature sensor on the I2C bus */
 #define TEMP_SENSOR_ADDR 0x48
@@ -25,8 +25,8 @@ int units = 0;
 int type = 0;
 int menuPage = 1;
 int celcius = 0;
-int kelvin = 1;
-int farenheit = 0;
+int kelvin = 0;
+int farenheit = 1;
 int sTemp = 0;
 
 char textstring[] = "text, more text, and even more text!";
@@ -37,6 +37,29 @@ char textstring[] = "text, more text, and even more text!";
 // when we run make
 volatile int *tris_E;
 volatile int *port_E;
+
+/*
+	Math.h doesn't work, need to implement pow ourselves. The function has limited
+	error handling and is mostrly implemented as a helper function to the draw
+	functions.
+*/
+int pow(int base, int exponent)
+{
+	int i;
+	int result = 1;
+	if (exponent == 0)
+	{
+		result = 1;
+	}
+	else
+	{
+		for (i = 0; i < exponent; i++)
+		{
+			result = result * base;
+		}
+	}
+	return result;
+}
 
 /* Interrupt Service Routine */
 void user_isr(void)
@@ -158,60 +181,135 @@ void i2c_stop()
 	I2C1CONSET = 1 << 2; // PEN
 	i2c_idle();
 }
-/* Convert 8.8 bit fixed point to string representation*/
-char *fixed_to_string(uint32_t num, char *buf)
+/*converts the temperature retrived from the sensor that
+is stored in a int16_t to a float so that we easier can
+convert between units.
+*/
+float convertInt16(int16_t temp)
 {
-	bool neg = false;
-	uint32_t n;
-	char *tmp;
-
-	if (num & 0x800000000) // makes it so it's signed
+	float upper = temp >> 8;			  // the eight upper bit contains the value in fron of the decimal point so we need to shift them
+	int16_t tempL = (temp & 0x00f0) >> 4; // bit 7-4 contains our decimal value so we mask everything else and then shift it right
+	float tiondel = 0;
+	float hundradel = 0;
+	float tusendel = 0;
+	float tiotusendel = 0;
+	// converts the hexadecimal representation of the number after the decimal point into decimal representation according to the
+	// TCN75A 2-Wire Serial Temperature Sensor reference sheet (DS21935C) page 13.
+	if (tempL & 0x8)
 	{
-		num = ~num + 1;
-		neg = true;
+		tiondel = 1 / 2;
 	}
-
-	buf += 4;
-	// n = num >> 8;
-	n = num >> 16;
-	tmp = buf;
-	do
+	if (tempL & 4)
 	{
-		*--tmp = (n % 10) + '0';
-		n /= 10;
-	} while (n);
-	if (neg)
-		*--tmp = '-';
-
-	n = num;
-	if (!(n & 0xFF))
-	{
-		*buf = 0;
-		return tmp;
+		hundradel = 1 / (pow(2, 2));
 	}
-	*buf++ = '.';
-	while ((n &= 0xFF))
+	if (tempL & 2)
 	{
-		n *= 10;
-		*buf++ = (n >> 8) + '0';
+		tusendel = 1 / (pow(2, 3));
 	}
-	*buf = 0;
+	if (tempL & 1)
+	{
+		tiotusendel = 1 / (pow(2, 4));
+	}
+	float lower = (tiondel + hundradel + tusendel + tiotusendel);
+	float fTemp = upper + lower;
 
-	return tmp;
+	return fTemp;
 }
-uint32_t strlen1(char *str)
+// Reverses a string 'str' of length 'len'
+void reverse(char *str, int len)
 {
-	uint32_t n = 0;
-	while (*str++)
-		n++;
-	return n;
+	int i = 0, j = len - 1, temp; // initialze int variables
+	while (i < j)				  // loop until the end
+	{
+		temp = str[i];
+		str[i] = str[j];
+		str[j] = temp;
+		i++;
+		j--;
+	}
 }
 
-void getTemperature(void)
+/* Converts a given integer x to string str[].
+ digits is the number of digits required in the output.
+ If digits is more than the number of digits in x then 0s are added at the beginning.
+ */
+int intToStr(int x, char str[], int digits)
 {
+	int i = 0;
+	while (x)
+	{
+		str[i++] = (x % 10) + '0';
+		x = x / 10;
+	}
 
-	uint16_t temp;
-	char buf[32], *s, *t;
+	// If number of digits required is more, then
+	// add 0s at the beginning
+	while (i < digits)
+	{
+		str[i++] = '0';
+	}
+	/* We check our global variable to see what unit should be printed
+	 */
+	if (digits == 0 && kelvin == 1 && celcius == 0 && farenheit == 0)
+	{
+		str[i++] = ' ';
+		str[i++] = 'K';
+	}
+	else if (digits == 0 && celcius == 1 && kelvin == 0 && farenheit == 0)
+	{
+		str[i++] = ' ';
+		str[i++] = 'C';
+	}
+	else if (digits == 0 && farenheit == 1)
+	{
+		str[i++] = ' ';
+		str[i++] = 'F';
+	}
+	reverse(str, i);
+	str[i] = '\0';
+	return i;
+}
+
+// Converts a floating-point/double number to a string.
+void ftoa(float n, char *res, int afterpoint)
+{
+	// Extract integer part
+	int ipart = (int)n;
+
+	// Extract floating part
+	float fpart = n - (float)ipart;
+
+	// convert integer part to string
+	int i = intToStr(ipart, res, 0);
+
+	// check for display option after point
+	if (afterpoint != 0)
+	{
+		res[i] = '.'; // add dot
+
+		// Get the value of fraction part upto given no.
+		// of points after dot. The third parameter
+		// is needed to handle cases like 233.007
+		fpart = fpart * pow(10, afterpoint);
+
+		intToStr((int)fpart, res + i + 1, afterpoint);
+		// res[i] = 'K';
+	}
+}
+
+// uint32_t strlen1(char *str)
+// {
+// 	uint32_t n = 0;
+// 	while (*str++)
+// 		n++;
+// 	return n;
+// }
+
+void getKelvinTemperature(void)
+{
+	int16_t temp;
+	char buf[32], *s;
 	/* Send start condition and address of the temperature sensor with
 	write mode (lowest bit = 0) until the temperature sensor sends
 	acknowledge condition */
@@ -256,24 +354,13 @@ void getTemperature(void)
 		i2c_nack();
 		i2c_stop();
 		// T(K) = T(°C) + 273.15
-		if (kelvin == 1)
-		{
-			uint32_t fKelvin = 273.15 + temp;
-			s = fixed_to_string(fKelvin, buf);
-			// int lenght = sizeof(s) / sizeof(char);
-			// float sFloat = 0;
-			// for (int i = 0; i < lenght; i++)
-			// {
-			// 	sFloat = ((int)s[i] - 48) * pow(10, i);
-			// }
-			// float kelvinFloat = 273.15 + sFloat;
 
-			t = s + strlen1(s);
-			*t++ = ' ';
-			*t++ = 7;
-			*t++ = 'K'; // temperature unit
-			*t++ = 0;
-		}
+		// if (kelvin == 1)
+		// {
+		float fKelvin = 273.15 + convertInt16(temp);
+		ftoa(fKelvin, buf, 0);
+		//}
+
 		if (buttons & 1)
 		{
 			sTemp = 0;
@@ -287,6 +374,141 @@ void getTemperature(void)
 	}
 }
 
+void getCelciusTemperature(void)
+{
+	int16_t temp;
+	char buf[32], *s;
+	/* Send start condition and address of the temperature sensor with
+	write mode (lowest bit = 0) until the temperature sensor sends
+	acknowledge condition */
+	do
+	{
+		i2c_start();
+	} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+	/* Send register number we want to access */
+	i2c_send(TEMP_SENSOR_REG_CONF);
+	/* Set the config register to 0 */
+	i2c_send(0x0);
+	/* Send stop condition */
+	i2c_stop();
+
+	for (;;)
+	{
+
+		int buttons = getbtns();
+		/* Send start condition and address of the temperature sensor with
+		write flag (lowest bit = 0) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+		/* Send register number we want to access */
+		i2c_send(TEMP_SENSOR_REG_TEMP);
+
+		/* Now send another start condition and address of the temperature sensor with
+		read mode (lowest bit = 1) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send((TEMP_SENSOR_ADDR << 1) | 1));
+
+		/* Now we can start receiving data from the sensor data register */
+		temp = i2c_recv() << 8;
+		i2c_ack();
+		temp |= i2c_recv();
+		/* To stop receiving, send nack and stop */
+		i2c_nack();
+		i2c_stop();
+		// T(K) = T(°C) + 273.15
+
+		// if (kelvin == 1)
+		// {
+		float fCelcius = convertInt16(temp);
+		ftoa(fCelcius, buf, 0);
+		//}
+
+		if (buttons & 1)
+		{
+			sTemp = 0;
+			break;
+		}
+		display_string(1, s); // temperature string
+
+		display_update();
+		quicksleep(500000);
+		//  delay(1000000);
+	}
+}
+
+void getFarenheitTemperature(void)
+{
+	int16_t temp;
+	char buf[32], *s;
+	/* Send start condition and address of the temperature sensor with
+	write mode (lowest bit = 0) until the temperature sensor sends
+	acknowledge condition */
+	do
+	{
+		i2c_start();
+	} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+	/* Send register number we want to access */
+	i2c_send(TEMP_SENSOR_REG_CONF);
+	/* Set the config register to 0 */
+	i2c_send(0x0);
+	/* Send stop condition */
+	i2c_stop();
+
+	for (;;)
+	{
+
+		int buttons = getbtns();
+		/* Send start condition and address of the temperature sensor with
+		write flag (lowest bit = 0) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+		/* Send register number we want to access */
+		i2c_send(TEMP_SENSOR_REG_TEMP);
+
+		/* Now send another start condition and address of the temperature sensor with
+		read mode (lowest bit = 1) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send((TEMP_SENSOR_ADDR << 1) | 1));
+
+		/* Now we can start receiving data from the sensor data register */
+		temp = i2c_recv() << 8;
+		i2c_ack();
+		temp |= i2c_recv();
+		/* To stop receiving, send nack and stop */
+		i2c_nack();
+		i2c_stop();
+		// T(°F) = T(°C) × 1.8 + 32
+
+		// if (kelvin == 1)
+		// {
+		float fFarenheit = convertInt16(temp) * 1.8 + 32;
+		ftoa(fFarenheit, buf, 0);
+		//}
+
+		if (buttons & 1)
+		{
+			sTemp = 0;
+			break;
+		}
+		display_string(1, s); // temperature string
+
+		display_update();
+		quicksleep(500000);
+		//  delay(1000000);
+	}
+}
 void menu(void)
 {
 
@@ -313,7 +535,26 @@ void unit(void)
 		display_string(2, "Farenheit");
 		display_string(3, "Back to Menu");
 		display_update();
-		if (button1 & 0x200)
+
+		if (buttons & 4) // button 4. Select celcius
+		{
+			celcius = 1;
+			farenheit = 0;
+			kelvin = 0;
+		}
+		if (buttons & 2) // button 3. Select Kelvin
+		{
+			celcius = 0;
+			farenheit = 0;
+			kelvin = 1;
+		}
+		if (buttons & 1) // button 2. select Farenheit
+		{
+			celcius = 0;
+			kelvin = 0;
+			farenheit = 1;
+		}
+		if (button1 & 0x200) // button 1 exit
 		{
 			units = 0; // breaks out of the while loop in temperature
 			menuPage = 1;
@@ -366,22 +607,25 @@ void showTemperature(void)
 		display_string(2, "Back to menu");
 		display_string(3, "");
 		display_update();
-		getTemperature(); // temperature on string 1
+		// check which temperature string we should display
+		// temperature will be displayed on line 1.
+		if (celcius == 1)
+		{
+			getCelciusTemperature();
+		}
+		else if (kelvin == 1)
+		{
+			getKelvinTemperature();
+		}
+		else if (farenheit == 1)
+		{
+			getFarenheitTemperature();
+		}
 		if (sTemp == 0)
 		{
 			menuPage = 1;
 			menu();
 		}
-		// if (button1 & 0x200)
-		// {
-		// 	menuPage = 1;
-		// 	sTemp = 0;
-		// 	menu();
-		// }
-		// if (sTemp == 1)
-		// {
-		// 	getTemperature();
-		// }
 		tOutCount = 0;
 	}
 }

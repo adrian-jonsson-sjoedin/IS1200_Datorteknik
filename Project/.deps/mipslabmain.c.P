@@ -7,8 +7,7 @@ mipslabmain.c.o: mipslabmain.c /opt/mcb32tools/include/stdint.h \
  /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/stdarg.h \
  /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/stddef.h \
  /opt/mcb32tools/include/string.h mipslab.h \
- /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/float.h \
- /opt/mcb32tools/include/math.h /opt/mcb32tools/include/machine/ieeefp.h
+ /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/float.h
 mipslabmain.c /opt/mcb32tools/include/stdint.h :
  /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/stdint-gcc.h :
  /opt/mcb32tools/include/pic32mx.h :
@@ -19,4 +18,3 @@ mipslabmain.c /opt/mcb32tools/include/stdint.h :
  /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/stddef.h :
  /opt/mcb32tools/include/string.h mipslab.h :
  /opt/mcb32tools/lib/gcc/mipsel-mcb32-elf/4.9.2/include/float.h :
- /opt/mcb32tools/include/math.h /opt/mcb32tools/include/machine/ieeefp.h :
