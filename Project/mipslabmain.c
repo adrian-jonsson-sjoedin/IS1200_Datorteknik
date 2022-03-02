@@ -15,7 +15,7 @@
 #include <stdio.h>
 #include "mipslab.h" /* Declatations for these labs */
 #include <float.h>
-//#include <math.h>
+#include <stdlib.h>
 
 /* Address of the temperature sensor on the I2C bus */
 #define TEMP_SENSOR_ADDR 0x48
@@ -24,10 +24,13 @@ int tOutCount = 0;
 int units = 0;
 int type = 0;
 int menuPage = 1;
-int celcius = 0;
+int celcius = 1; // pre set to measure in celcius
 int kelvin = 0;
-int farenheit = 1;
+int farenheit = 0;
 int sTemp = 0;
+int continuous = 1; // pre set to show continuous temperature value
+int mtype1 = 0;
+int mytype2 = 0;
 
 char textstring[] = "text, more text, and even more text!";
 #define TIME2PERIOD ((80000000 / 256) / 10); // the chipkit has a freq. of 80MHz and we're
@@ -37,6 +40,9 @@ char textstring[] = "text, more text, and even more text!";
 // when we run make
 volatile int *tris_E;
 volatile int *port_E;
+
+void measurements(void);
+void measurementType(void);
 
 /*
 	Math.h doesn't work, need to implement pow ourselves. The function has limited
@@ -64,7 +70,12 @@ int pow(int base, int exponent)
 /* Interrupt Service Routine */
 void user_isr(void)
 {
-	return;
+	if (IFS(0) & 0x100)
+	{ // if the 8th bit is 1 increment count
+		tOutCount++;
+
+		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
+	}
 }
 // void delay(int cyc)
 // {
@@ -83,10 +94,10 @@ void init(void)
 	*/
 	tris_E = (volatile int *)0xbf886100; // Given address for TRIS E register
 	port_E = (volatile int *)0xbf886110; // Given address for PORT E register
-	// To set PORT E's bit 7-0 as a outputs we need to mask the 8 lsb to 0
-	// *tris_E = *tris_E & 0xffffff00; // c) done
+										 // To set PORT E's bit 7-0 as a outputs we need to mask the 8 lsb to 0
+	*tris_E = *tris_E & 0xffffff00;		 // c) done
 
-	//*port_E = 0x00000000; // initialize the value to zero
+	*port_E = 0x00000000; // initialize the value to zero
 
 	// e)
 	TRISD = TRISD | 0x00000fe0; // Set bit 11-5 to 1. The rest left untoched
@@ -361,7 +372,7 @@ void getKelvinTemperature(void)
 		ftoa(fKelvin, buf, 0);
 		//}
 
-		if (buttons & 1)
+		if (getbtn1() & 0x200)
 		{
 			sTemp = 0;
 			break;
@@ -429,7 +440,7 @@ void getCelciusTemperature(void)
 		ftoa(fCelcius, buf, 0);
 		//}
 
-		if (buttons & 1)
+		if (getbtn1() & 0x200)
 		{
 			sTemp = 0;
 			break;
@@ -497,17 +508,119 @@ void getFarenheitTemperature(void)
 		ftoa(fFarenheit, buf, 0);
 		//}
 
-		if (buttons & 1)
+		if (getbtn1() & 0x200)
 		{
 			sTemp = 0;
 			break;
 		}
-		display_string(1, s); // temperature string
+		display_string(1, buf); // temperature string
 
 		display_update();
 		quicksleep(500000);
 		//  delay(1000000);
 	}
+}
+
+void celciusAverage(int time)
+{
+	int counter = 0;
+	float sum = 0;
+	int16_t temp;
+	char buf[32], *s;
+	// float values[2001];
+
+	/* Send start condition and address of the temperature sensor with
+	write mode (lowest bit = 0) until the temperature sensor sends
+	acknowledge condition */
+	do
+	{
+		i2c_start();
+	} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+	/* Send register number we want to access */
+	i2c_send(TEMP_SENSOR_REG_CONF);
+	/* Set the config register to 0 */
+	i2c_send(0x0);
+	/* Send stop condition */
+	i2c_stop();
+	int i = 0;
+	for (;;)
+	{
+		counter++;
+		if (counter > time)
+		{
+			break;
+		}
+
+		int buttons = getbtns();
+		/* Send start condition and address of the temperature sensor with
+		write flag (lowest bit = 0) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+		/* Send register number we want to access */
+		i2c_send(TEMP_SENSOR_REG_TEMP);
+
+		/* Now send another start condition and address of the temperature sensor with
+		read mode (lowest bit = 1) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send((TEMP_SENSOR_ADDR << 1) | 1));
+
+		/* Now we can start receiving data from the sensor data register */
+		temp = i2c_recv() << 8;
+		i2c_ack();
+		temp |= i2c_recv();
+		/* To stop receiving, send nack and stop */
+		i2c_nack();
+		i2c_stop();
+
+		float fCelcius = convertInt16(temp);
+		// values[i] = fCelcius;
+		// i = i + 1;
+
+		sum += fCelcius;
+
+		// ftoa(fCelcius, buf, 0);
+
+		if (getbtn1() & 0x200)
+		{
+			sTemp = 0;
+			break;
+		}
+
+		display_string(1, s); // temperature string
+		display_update();
+		quicksleep(2850000);
+	}
+	// char res[32], *r;
+	// ftoa((float)counter, res, 0);
+
+	// float min = values[0];
+	// float max = values[0];
+	// i = 1;
+	// for (i; i < counter; i++)
+	// {
+	// 	if (min > values[i])
+	// 	{
+	// 		min = values[i];
+	// 	}
+	// 	if (max < values[i])
+	// 	{
+	// 		max = values[i];
+	// 	}
+	// }
+
+	sum = sum / counter;
+	ftoa(sum, buf, 1);
+	display_string(1, s); // average temp
+	display_update();
+	// ftoa(max, buf, 1);
+	// display_string(2, buf);
+	// display_update();
 }
 void menu(void)
 {
@@ -520,98 +633,151 @@ void menu(void)
 }
 void unit(void)
 {
-	int buttons = getbtns();
-	int button1 = getbtn1();
-	if (IFS(0) & 0x100)
-	{ // if the 8th bit is 1 increment count
-		tOutCount++;
 
-		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
-	}
-	if (tOutCount == 10)
+	display_string(0, "Celcius");
+	display_string(1, "Kelvin");
+	display_string(2, "Farenheit");
+	display_string(3, "Back to Menu");
+	display_update();
+	quicksleep(100);
+	while (getbtns() != 0)
 	{
-		display_string(0, "Celcius");
-		display_string(1, "Kelvin");
-		display_string(2, "Farenheit");
-		display_string(3, "Back to Menu");
-		display_update();
+	}
 
-		if (buttons & 4) // button 4. Select celcius
+	while (units == 1 && menuPage == 0)
+	{
+		if (getbtns() & 4) // button 4. Select celcius
 		{
 			celcius = 1;
 			farenheit = 0;
 			kelvin = 0;
+			display_string(0, "Celcius selected");
+			display_string(1, "Kelvin");
+			display_string(2, "Farenheit");
+			display_string(3, "Back to Menu");
+			display_update();
 		}
-		if (buttons & 2) // button 3. Select Kelvin
+		if (getbtns() & 2) // button 3. Select Kelvin
 		{
 			celcius = 0;
 			farenheit = 0;
 			kelvin = 1;
+			display_string(0, "Celcius");
+			display_string(1, "Kelvin selected");
+			display_string(2, "Farenheit");
+			display_string(3, "Back to Menu");
+			display_update();
 		}
-		if (buttons & 1) // button 2. select Farenheit
+		if (getbtns() & 1) // button 2. select Farenheit
 		{
 			celcius = 0;
 			kelvin = 0;
 			farenheit = 1;
+			display_string(0, "Celcius");
+			display_string(1, "Kelvin");
+			display_string(2, "Farenheit selected");
+			display_string(3, "Back to Menu");
+			display_update();
 		}
-		if (button1 & 0x200) // button 1 exit
+		if (getbtn1() & 0x200 && units == 1) // button 1 exit
 		{
 			units = 0; // breaks out of the while loop in temperature
 			menuPage = 1;
 			menu(); // loads the main page to display
 		}
-		tOutCount = 0;
 	}
+}
+
+void measurements(void)
+{
+	int buttons = getbtns();
+	int button1 = getbtn1();
+
+	display_string(0, "Average");
+	display_string(1, "Max value");
+	display_string(2, "Min value");
+	display_string(3, "Back to menu");
+	display_update();
+
+	if ((button1 & 0x200) && mtype1 == 1) // button 1
+	{
+		mtype1 = 0;
+		menuPage = 1;
+		menu();
+	}
+	// else if ((buttons & 2) && menuPage == 1) // button3
+	// {
+	// 	units = 1;
+	// 	menuPage = 0;
+	// 	while (units == 1)
+	// 	{
+	// 		unit();
+	// 	}
+	// }
+	// else if ((buttons & 1) && menuPage == 1) // button 2
+	// {
+	// 	type = 1;
+	// 	menuPage = 0;
+	// 	while (type == 1)
+	// 	{
+	// 		measurementType();
+	// 	}
+	// }
 }
 
 void measurementType(void)
 {
-	int buttons = getbtns();
-	int button1 = getbtn1();
-	if (IFS(0) & 0x100)
-	{ // if the 8th bit is 1 increment count
-		tOutCount++;
 
-		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
-	}
-	if (tOutCount == 10)
+	display_string(0, "Measur. Type:");
+	display_string(1, "Continuous");
+	display_string(2, "Average func.");
+	display_string(3, "Back to Menu");
+	display_update();
+	quicksleep(100);
+	while (getbtns() != 0) // is needed whenever i enter a sub menu to make sure the buttons
+	// are released
 	{
-		display_string(0, "Measur. Type:");
-		display_string(1, "Continuous");
-		display_string(2, "Time average");
-		display_string(3, "Back to Menu");
-		display_update();
-		if (button1 & 0x200)
+	}
+	while (type == 1 && menuPage == 0)
+	{
+
+		if (getbtn1() & 0x200 && type == 1)
 		{
 			type = 0; // breaks out of the while loop in temperature
 			menuPage = 1;
 			menu(); // loads the menu page to display
 		}
-		tOutCount = 0;
+		else if ((getbtns() & 1) && type == 1)
+		{ // button 2. takes my to the measurments page
+
+			type = 0;
+			mtype1 = 1;
+			while (mtype1 == 1)
+			{
+				measurements();
+			}
+		}
 	}
 }
 
 void showTemperature(void)
 {
-	int buttons = getbtns();
-	int button1 = getbtn1();
-	if (IFS(0) & 0x100)
-	{ // if the 8th bit is 1 increment count
-		tOutCount++;
-
-		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
-	}
-	if (tOutCount == 10)
+	display_string(0, "Current temperature");
+	display_string(3, "Back to menu");
+	display_string(2, "");
+	display_update();
+	quicksleep(100);
+	while (getbtns() != 0 | getbtn1() != 0)
 	{
-		display_string(0, "Current temperature");
-		display_string(2, "Back to menu");
-		display_string(3, "");
-		display_update();
+	}
+	while (sTemp == 1 && menuPage == 0)
+	{
 		// check which temperature string we should display
 		// temperature will be displayed on line 1.
 		if (celcius == 1)
 		{
 			getCelciusTemperature();
+			// celciusAverage(10);
 		}
 		else if (kelvin == 1)
 		{
@@ -621,59 +787,43 @@ void showTemperature(void)
 		{
 			getFarenheitTemperature();
 		}
-		if (sTemp == 0)
+		if (getbtn1() & 0x200)
 		{
 			menuPage = 1;
+			sTemp == 0;
 			menu();
 		}
-		tOutCount = 0;
 	}
 }
 
 /* This function is called repetitively from the main function */
 void temperatureLoop(void)
 {
-
-	int buttons = getbtns();
-	int button1 = getbtn1();
-
-	if (IFS(0) & 0x100)
-	{ // if the 8th bit is 1 increment count
-		tOutCount++;
-
-		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
-	}
-	if (tOutCount == 10)
+	// quicksleep(100);
+	while (getbtns() != 0 | getbtn1() != 0)
 	{
-		if ((button1 & 0x200) && menuPage == 1)
-		{
-			sTemp = 1;
-			menuPage = 0;
-			while (sTemp == 1)
-			{
-				showTemperature();
-			}
-		}
-		else if ((buttons & 2) && menuPage == 1) // button3
-		{
-			units = 1;
-			menuPage = 0;
-			while (units == 1)
-			{
-				unit();
-			}
-		}
-		else if ((buttons & 1) && menuPage == 1) // button 2
-		{
-			type = 1;
-			menuPage = 0;
-			while (type == 1)
-			{
-				measurementType();
-			}
-		}
+	}
 
-		tOutCount = 0;
+	if (getbtn1() & 0x200 && menuPage == 1)
+	{
+		sTemp = 1;
+		menuPage = 0;
+		// while (sTemp == 1)
+		//{
+		showTemperature();
+		//}
+	}
+	else if (getbtns() & 2 && menuPage == 1) // button3
+	{
+		units = 1;
+		menuPage = 0;
+		unit();
+	}
+	else if (getbtns() & 1 && menuPage == 1) // button 2
+	{
+		type = 1;
+		menuPage = 0;
+		measurementType();
 	}
 }
 
