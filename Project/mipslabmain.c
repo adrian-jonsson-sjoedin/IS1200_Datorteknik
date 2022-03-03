@@ -24,13 +24,14 @@ int tOutCount = 0;
 int units = 0;
 int type = 0;
 int menuPage = 1;
+int setTimePage = 0;
 int celcius = 1; // pre set to measure in celcius
 int kelvin = 0;
 int farenheit = 0;
 int sTemp = 0;
 int continuous = 1; // pre set to show continuous temperature value
-int mtype1 = 0;
-int mytype2 = 0;
+int average = 0;	// for showing average measurments
+int timer = 10;		// timer for measuring pre set to 10s
 
 char textstring[] = "text, more text, and even more text!";
 #define TIME2PERIOD ((80000000 / 256) / 10); // the chipkit has a freq. of 80MHz and we're
@@ -41,13 +42,12 @@ char textstring[] = "text, more text, and even more text!";
 volatile int *tris_E;
 volatile int *port_E;
 
-void measurements(void);
 void measurementType(void);
+void menu(void);
+void setTime(void);
 
 /*
-	Math.h doesn't work, need to implement pow ourselves. The function has limited
-	error handling and is mostrly implemented as a helper function to the draw
-	functions.
+	Math.h doesn't work so we need to implement pow ourselves.
 */
 int pow(int base, int exponent)
 {
@@ -67,7 +67,10 @@ int pow(int base, int exponent)
 	return result;
 }
 
-/* Interrupt Service Routine */
+/*
+Interrupt Service Routine
+Could probably delete this since we don\t use interrupts
+*/
 void user_isr(void)
 {
 	if (IFS(0) & 0x100)
@@ -77,13 +80,11 @@ void user_isr(void)
 		IFSCLR(0) = 0x00000100; // Clear the timer interrupt status flag
 	}
 }
-// void delay(int cyc)
-// {
-// 	int i;
-// 	for (i = cyc; i > 0; i--)
-// 		;
-// }
-/* Initialization goes here */
+
+/*
+ Initialization goes here
+ Is the same as in lab 3
+*/
 void init(void)
 {
 	/*
@@ -192,14 +193,14 @@ void i2c_stop()
 	I2C1CONSET = 1 << 2; // PEN
 	i2c_idle();
 }
-/*converts the temperature retrived from the sensor that
-is stored in a int16_t to a float so that we easier can
+
+/*converts the temperature retrived from the sensor that is stored in a int16_t to a float so that we easier can
 convert between units.
 */
 float convertInt16(int16_t temp)
 {
-	float upper = temp >> 8;			  // the eight upper bit contains the value in fron of the decimal point so we need to shift them
-	int16_t tempL = (temp & 0x00f0) >> 4; // bit 7-4 contains our decimal value so we mask everything else and then shift it right
+	float upper = temp >> 8;			  // the eight upper bit contains the value in front of the decimal point so we need to shift them.
+	int16_t tempL = (temp & 0x00f0) >> 4; // bit 7-4 contains our decimal value so we mask everything else and then shift it right.
 	float tiondel = 0;
 	float hundradel = 0;
 	float tusendel = 0;
@@ -227,12 +228,17 @@ float convertInt16(int16_t temp)
 
 	return fTemp;
 }
+/*
+The following three functions (reverse, intToString and ftoa) is taken from https://www.geeksforgeeks.org/convert-floating-point-number-string/
+ although with some changes
+*/
 // Reverses a string 'str' of length 'len'
 void reverse(char *str, int len)
 {
 	int i = 0, j = len - 1, temp; // initialze int variables
 	while (i < j)				  // loop until the end
 	{
+		// shift the string
 		temp = str[i];
 		str[i] = str[j];
 		str[j] = temp;
@@ -305,22 +311,15 @@ void ftoa(float n, char *res, int afterpoint)
 		fpart = fpart * pow(10, afterpoint);
 
 		intToStr((int)fpart, res + i + 1, afterpoint);
-		// res[i] = 'K';
 	}
 }
 
-// uint32_t strlen1(char *str)
-// {
-// 	uint32_t n = 0;
-// 	while (*str++)
-// 		n++;
-// 	return n;
-// }
-
+// gives us the temperature in kelvin continuously
 void getKelvinTemperature(void)
 {
-	int16_t temp;
-	char buf[32], *s;
+	int16_t temp;	  // where we will store the data coming from the sensor
+	char buf[32], *s; // needed when we want to convert our data from a float to a char*
+
 	/* Send start condition and address of the temperature sensor with
 	write mode (lowest bit = 0) until the temperature sensor sends
 	acknowledge condition */
@@ -523,12 +522,25 @@ void getFarenheitTemperature(void)
 
 void celciusAverage(int time)
 {
-	int counter = 0;
-	float sum = 0;
+
 	int16_t temp;
 	char buf[32], *s;
-	// float values[2001];
+	char bufMin[32], *t;
+	char bufMax[32], *v;
+	float counter = 0;
+	float test = 1;
+	float sum = 0;
+	float values[3000];
+	int p = 0;
+	for (p; p < 300; p++)
+	{
+		values[p] = 0.0f;
+	}
+	int i = 0;
 
+	while (getbtn1() != 0)
+	{
+	}
 	/* Send start condition and address of the temperature sensor with
 	write mode (lowest bit = 0) until the temperature sensor sends
 	acknowledge condition */
@@ -542,16 +554,10 @@ void celciusAverage(int time)
 	i2c_send(0x0);
 	/* Send stop condition */
 	i2c_stop();
-	int i = 0;
-	for (;;)
-	{
-		counter++;
-		if (counter > time)
-		{
-			break;
-		}
 
-		int buttons = getbtns();
+	while (time > counter)
+	{
+
 		/* Send start condition and address of the temperature sensor with
 		write flag (lowest bit = 0) until the temperature sensor sends
 		acknowledge condition */
@@ -577,51 +583,258 @@ void celciusAverage(int time)
 		/* To stop receiving, send nack and stop */
 		i2c_nack();
 		i2c_stop();
-
-		float fCelcius = convertInt16(temp);
-		// values[i] = fCelcius;
-		// i = i + 1;
-
-		sum += fCelcius;
-
-		// ftoa(fCelcius, buf, 0);
+		// currentT = convertInt16(temp);
+		sum = sum + convertInt16(temp); // convert the data from temp. sensor to float
+		values[i++] = convertInt16(temp);
+		test++;
 
 		if (getbtn1() & 0x200)
 		{
 			sTemp = 0;
-			break;
+			menu();
+			return;
 		}
-
-		display_string(1, s); // temperature string
-		display_update();
-		quicksleep(2850000);
+		counter = counter + 1;
+		quicksleep(3500000);
 	}
-	// char res[32], *r;
-	// ftoa((float)counter, res, 0);
-
-	// float min = values[0];
-	// float max = values[0];
-	// i = 1;
-	// for (i; i < counter; i++)
-	// {
-	// 	if (min > values[i])
-	// 	{
-	// 		min = values[i];
-	// 	}
-	// 	if (max < values[i])
-	// 	{
-	// 		max = values[i];
-	// 	}
-	// }
+	float min = values[0];
+	float max = values[0];
+	int j = 1;
+	while (values[j] != 0.00)
+	{
+		if (min > values[j])
+		{
+			min = values[j];
+		}
+		if (max < values[j])
+		{
+			max = values[j];
+		}
+		j = j + 1;
+	}
 
 	sum = sum / counter;
-	ftoa(sum, buf, 1);
-	display_string(1, s); // average temp
+	ftoa(sum, buf, 0);
+	ftoa(min, bufMin, 0);
+	ftoa(max, bufMax, 0);
+	// ftoa(test, bufMin, 0); //displays how many times the while looped ran
+	display_string(0, buf);	   // average temp
+	display_string(1, bufMin); // min temp
+	display_string(2, bufMax); // min temp
+	display_string(3, "Back to menu");
 	display_update();
-	// ftoa(max, buf, 1);
-	// display_string(2, buf);
-	// display_update();
 }
+
+void kelvinAverage(int time)
+{
+
+	int16_t temp;
+	char buf[32], *s;
+	char bufMin[32], *t;
+	char bufMax[32], *v;
+	float counter = 0;
+	float test = 1;
+	float sum = 0;
+	float values[3000];
+	int p = 0;
+	for (p; p < 300; p++)
+	{
+		values[p] = 0.0f;
+	}
+	int i = 0;
+
+	while (getbtn1() != 0)
+	{
+	}
+	/* Send start condition and address of the temperature sensor with
+	write mode (lowest bit = 0) until the temperature sensor sends
+	acknowledge condition */
+	do
+	{
+		i2c_start();
+	} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+	/* Send register number we want to access */
+	i2c_send(TEMP_SENSOR_REG_CONF);
+	/* Set the config register to 0 */
+	i2c_send(0x0);
+	/* Send stop condition */
+	i2c_stop();
+
+	while (time > counter)
+	{
+
+		/* Send start condition and address of the temperature sensor with
+		write flag (lowest bit = 0) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+		/* Send register number we want to access */
+		i2c_send(TEMP_SENSOR_REG_TEMP);
+
+		/* Now send another start condition and address of the temperature sensor with
+		read mode (lowest bit = 1) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send((TEMP_SENSOR_ADDR << 1) | 1));
+
+		/* Now we can start receiving data from the sensor data register */
+		temp = i2c_recv() << 8;
+		i2c_ack();
+		temp |= i2c_recv();
+		/* To stop receiving, send nack and stop */
+		i2c_nack();
+		i2c_stop();
+		// currentT = convertInt16(temp);
+		sum = sum + (273.15 + convertInt16(temp)); // convert the data from temp. sensor to float
+		values[i++] = 273.15 + convertInt16(temp);
+		test++;
+
+		if (getbtn1() & 0x200)
+		{
+			sTemp = 0;
+			menu();
+			return;
+		}
+		counter = counter + 1;
+		quicksleep(3500000);
+	}
+	float min = values[0];
+	float max = values[0];
+	int j = 1;
+	while (values[j] != 0.00)
+	{
+		if (min > values[j])
+		{
+			min = values[j];
+		}
+		if (max < values[j])
+		{
+			max = values[j];
+		}
+		j = j + 1;
+	}
+
+	sum = sum / counter;
+	ftoa(sum, buf, 0);
+	ftoa(min, bufMin, 0);
+	ftoa(max, bufMax, 0);
+	// ftoa(test, bufMin, 0); //displays how many times the while looped ran
+	display_string(0, buf);	   // average temp
+	display_string(1, bufMin); // min temp
+	display_string(2, bufMax); // min temp
+	display_string(3, "Back to menu");
+	display_update();
+}
+
+void fahrenheitAverage(int time)
+{
+
+	int16_t temp;
+	char buf[32], *s;
+	char bufMin[32], *t;
+	char bufMax[32], *v;
+	float counter = 0;
+	float test = 1;
+	float sum = 0;
+	float values[3000];
+	int p = 0;
+	for (p; p < 300; p++)
+	{
+		values[p] = 0.0f;
+	}
+	int i = 0;
+
+	while (getbtn1() != 0)
+	{
+	}
+	/* Send start condition and address of the temperature sensor with
+	write mode (lowest bit = 0) until the temperature sensor sends
+	acknowledge condition */
+	do
+	{
+		i2c_start();
+	} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+	/* Send register number we want to access */
+	i2c_send(TEMP_SENSOR_REG_CONF);
+	/* Set the config register to 0 */
+	i2c_send(0x0);
+	/* Send stop condition */
+	i2c_stop();
+
+	while (time > counter)
+	{
+
+		/* Send start condition and address of the temperature sensor with
+		write flag (lowest bit = 0) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send(TEMP_SENSOR_ADDR << 1));
+		/* Send register number we want to access */
+		i2c_send(TEMP_SENSOR_REG_TEMP);
+
+		/* Now send another start condition and address of the temperature sensor with
+		read mode (lowest bit = 1) until the temperature sensor sends
+		acknowledge condition */
+		do
+		{
+			i2c_start();
+		} while (!i2c_send((TEMP_SENSOR_ADDR << 1) | 1));
+
+		/* Now we can start receiving data from the sensor data register */
+		temp = i2c_recv() << 8;
+		i2c_ack();
+		temp |= i2c_recv();
+		/* To stop receiving, send nack and stop */
+		i2c_nack();
+		i2c_stop();
+		// currentT = convertInt16(temp);
+		sum = sum + (convertInt16(temp) * 1.8 + 32); // convert the data from temp. sensor to float
+		values[i++] = convertInt16(temp) * 1.8 + 32;
+		test++;
+
+		if (getbtn1() & 0x200)
+		{
+			sTemp = 0;
+			menu();
+			return;
+		}
+		counter = counter + 1;
+		quicksleep(3500000);
+	}
+	float min = values[0];
+	float max = values[0];
+	int j = 1;
+	while (values[j] != 0.00)
+	{
+		if (min > values[j])
+		{
+			min = values[j];
+		}
+		if (max < values[j])
+		{
+			max = values[j];
+		}
+		j = j + 1;
+	}
+
+	sum = sum / counter;
+	ftoa(sum, buf, 0);
+	ftoa(min, bufMin, 0);
+	ftoa(max, bufMax, 0);
+	// ftoa(test, bufMin, 0); //displays how many times the while looped ran
+	display_string(0, buf);	   // average temp
+	display_string(1, bufMin); // min temp
+	display_string(2, bufMax); // min temp
+	display_string(3, "Back to menu");
+	display_update();
+}
+
 void menu(void)
 {
 
@@ -688,47 +901,10 @@ void unit(void)
 	}
 }
 
-void measurements(void)
-{
-	int buttons = getbtns();
-	int button1 = getbtn1();
-
-	display_string(0, "Average");
-	display_string(1, "Max value");
-	display_string(2, "Min value");
-	display_string(3, "Back to menu");
-	display_update();
-
-	if ((button1 & 0x200) && mtype1 == 1) // button 1
-	{
-		mtype1 = 0;
-		menuPage = 1;
-		menu();
-	}
-	// else if ((buttons & 2) && menuPage == 1) // button3
-	// {
-	// 	units = 1;
-	// 	menuPage = 0;
-	// 	while (units == 1)
-	// 	{
-	// 		unit();
-	// 	}
-	// }
-	// else if ((buttons & 1) && menuPage == 1) // button 2
-	// {
-	// 	type = 1;
-	// 	menuPage = 0;
-	// 	while (type == 1)
-	// 	{
-	// 		measurementType();
-	// 	}
-	// }
-}
-
 void measurementType(void)
 {
-
-	display_string(0, "Measur. Type:");
+	// update the display
+	display_string(0, "Set timer");
 	display_string(1, "Continuous");
 	display_string(2, "Average func.");
 	display_string(3, "Back to Menu");
@@ -740,52 +916,154 @@ void measurementType(void)
 	}
 	while (type == 1 && menuPage == 0)
 	{
-
-		if (getbtn1() & 0x200 && type == 1)
+		if ((getbtn1() & 0x200) && type == 1) // button 1. go back to menu
 		{
-			type = 0; // breaks out of the while loop in temperature
-			menuPage = 1;
-			menu(); // loads the menu page to display
-		}
-		else if ((getbtns() & 1) && type == 1)
-		{ // button 2. takes my to the measurments page
-
 			type = 0;
-			mtype1 = 1;
-			while (mtype1 == 1)
-			{
-				measurements();
-			}
+			menuPage = 1;
+			menu();
+		}
+		else if (getbtns() & 1 && type == 1) // button 2 select measurment over a time period
+		{
+			average = 1;
+			continuous = 0;
+			display_string(1, "Continuous");
+			display_string(2, "Average selected");
+			display_update();
+		}
+		else if (getbtns() & 2 && type == 1) // button 3. select continus measurment
+		{
+			average = 0;
+			continuous = 1;
+			display_string(1, "Cont. selected");
+			display_string(2, "Average func.");
+			display_update();
+		}
+		else if (getbtns() & 4 && type == 1)
+		{
+			type = 0;
+			setTimePage = 1;
+			setTime();
+		}
+	}
+}
+void setTime(void)
+{
+	display_string(1, "");
+	display_string(2, "");
+	display_update();
+	// print the current set timer
+	float t = (float)timer;
+	char d[32];
+	ftoa(t, d, 0);
+	display_string(2, d);
+	display_update();
+	quicksleep(100);
+	while (getbtns() != 0)
+	{
+	}
+	while (setTimePage == 1)
+	{
+		while (getbtns() != 0 | getbtn1() != 0)
+		{
+		}
+		if (getsw() & 0x1) // go back if you flip switch 1 up
+		{
+			type = 1;
+			setTimePage = 0;
+			measurementType();
+			break;
+		}
+		else if (getbtn1() & 0x200)
+		{ // pressing button 1 adds 1 to timer
+			timer++;
+			float t = (float)timer;
+			char d[32];
+			ftoa(t, d, 0);
+			display_string(2, d);
+			display_update();
+		}
+		else if (getbtns() & 1)
+		{ // pressing button 2 adds 10 to the timer
+			timer += 10;
+			float t = (float)timer;
+			char d[32];
+			ftoa(t, d, 0);
+			display_string(2, d);
+			display_update();
+		}
+		else if (getbtns() & 2)
+		{ // pressing button 3 adds 100 to the timer
+			timer += 100;
+			float t = (float)timer;
+			char d[32];
+			ftoa(t, d, 0);
+			display_string(2, d);
+			display_update();
+		}
+		else if (getbtns() & 4)
+		{ // pressing button 4 adds 1000 to the timer
+			timer += 1000;
+			float t = (float)timer;
+			char d[32];
+			ftoa(t, d, 0);
+			display_string(2, d);
+			display_update();
+		}
+		if (timer >= 2000)
+		{
+			timer = 0;
 		}
 	}
 }
 
 void showTemperature(void)
 {
-	display_string(0, "Current temperature");
-	display_string(3, "Back to menu");
+	if (continuous == 1)
+	{
+		display_string(0, "Current temperature");
+		display_update();
+	}
+	else
+	{
+		display_string(0, "Avr. Min. Max");
+	}
+	display_string(1, "");
 	display_string(2, "");
+	display_string(3, "Back to menu");
+
 	display_update();
 	quicksleep(100);
-	while (getbtns() != 0 | getbtn1() != 0)
+	while (getbtn1() != 0)
 	{
 	}
 	while (sTemp == 1 && menuPage == 0)
 	{
 		// check which temperature string we should display
 		// temperature will be displayed on line 1.
-		if (celcius == 1)
+		if (celcius == 1 && average == 1)
+		{
+
+			celciusAverage(timer);
+		}
+		else if (celcius == 1 && continuous == 1)
 		{
 			getCelciusTemperature();
-			// celciusAverage(10);
 		}
-		else if (kelvin == 1)
+		else if (kelvin == 1 && continuous == 1)
 		{
 			getKelvinTemperature();
 		}
-		else if (farenheit == 1)
+		else if (kelvin == 1 && average == 1)
+		{
+			kelvinAverage(timer);
+		}
+		else if (farenheit == 1 && continuous == 1)
 		{
 			getFarenheitTemperature();
+		}
+		else if (farenheit == 1 && average == 1)
+		{
+			fahrenheitAverage(timer);
 		}
 		if (getbtn1() & 0x200)
 		{

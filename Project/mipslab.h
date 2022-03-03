@@ -35,16 +35,6 @@ void tick(unsigned int *timep);
 */
 void display_debug(volatile int *const addr);
 
-/* -------------------------- Project related code -------------------------- */
-
-/* Declare bitmap array containing the display */
-extern uint8_t display[128 * 4]; // 128*4 Bytes for each pixel column
-
-/* Function declarations */
-// int pow(int base, int exponent);
-
-/* ----------------------- End of project related code ---------------------- */
-
 /* Declare bitmap array containing font */
 extern const uint8_t const font[128 * 8];
 
